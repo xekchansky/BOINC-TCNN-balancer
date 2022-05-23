@@ -1,0 +1,7 @@
+numpy
+imageio
+pandas
+sklearn
+torch
+torch-summary
+horovod[pytorch]

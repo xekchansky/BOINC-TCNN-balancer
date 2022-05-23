@@ -1,0 +1,15 @@
+# Ignore Data files
+/data
+/data_extracted
+/zip_data
+/app/data.zip
+
+# Ignore temporary files
+/app/__pycache__
+/.ipynb_checkpoints
+
+#ignore logs and accs info files
+/*.json
+
+# Ignore scratch jupyter notebook
+/govno.ipynb
