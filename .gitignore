@@ -10,6 +10,8 @@
 
 #ignore logs and accs info files
 /*.json
+/logs/*
+/app/config.ini
 
 # Ignore scratch jupyter notebook
 /govno.ipynb
