@@ -1,10 +1,12 @@
-import smtplib, ssl
-import socket
 import configparser
+import smtplib
+import socket
+import ssl
+
 
 def extract_ip():
     st = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    try:       
+    try:
         st.connect(('10.255.255.255', 1))
         IP = st.getsockname()[0]
     except Exception:
@@ -12,6 +14,7 @@ def extract_ip():
     finally:
         st.close()
     return IP
+
 
 port = 465  # For SSL
 
