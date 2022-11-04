@@ -27,4 +27,4 @@ with smtplib.SMTP_SSL("smtp.gmail.com", port, context=context) as server:
     message = """\
 Subject: Worker is Ready
 """ + str(extract_ip())
-    server.sendmail("xekchansky.bot@gmail.com", "xekchansky@gmail.com", message)
+    server.sendmail(acc['email'], "xekchansky@gmail.com", message)
