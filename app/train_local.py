@@ -30,6 +30,7 @@ class TextureCNN:
         self.train_ds_loader = None
         self.train_ds = None
         self.gpu = False
+
         if device == 'gpu': 
             self.gpu = True
 

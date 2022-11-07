@@ -32,6 +32,7 @@ class TextureCNN:
         self.train_ds_loader = None
         self.train_ds = None
         self.gpu = False
+
         if device == 'gpu': 
             self.gpu = True
 
@@ -96,7 +97,7 @@ class TextureCNN:
         self.ts = []
         self.start = time.time()
 
-        self.num_epoch = 20
+        self.num_epoch = epochs
 
         for epoch in tqdm(range(1, self.num_epoch + 1)):
             train_loss = 0.0

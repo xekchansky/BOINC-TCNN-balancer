@@ -1,8 +1,9 @@
 # Ignore Data files
-/data
-/data_extracted
-/zip_data
-/app/data.zip
+*/zip_data
+*/extracted_data
+*/cropped_data
+*/data
+*/data.zip
 
 # Ignore temporary files
 /app/__pycache__
