@@ -22,8 +22,8 @@ def extract_zip_data(input_path='zip_data', output_path='extracted_data'):
 
     create_output_path(output_path)
     for file in tqdm(os.listdir(input_path)):
-        with zipfile.ZipFile(input_path + file, 'r') as zip_ref:
-            zip_ref.extractall(output_path + file[:-4])
+        with zipfile.ZipFile(os.path.join(input_path, file), 'r') as zip_ref:
+            zip_ref.extractall(os.path.join(output_path, file[:-4]))
 
 
 def crop_images(data_path='extracted_data', output_path='cropped_data'):
@@ -68,7 +68,7 @@ def rename(data_path='cropped_data', output_path='data/dataset'):
 
     for folder in tqdm(os.listdir(data_path)):
         for file in os.listdir(os.path.join(data_path, folder)):
-            new_name = f"{file.split('-')[0]}-{counter:0{max_counter_len}}"
+            new_name = f"{file.split('-')[0]}-{counter:0{max_counter_len}}.png"
             os.rename(os.path.join(data_path, folder, file), os.path.join(output_path, new_name))
             counter += 1
         os.rmdir(os.path.join(data_path, folder))
