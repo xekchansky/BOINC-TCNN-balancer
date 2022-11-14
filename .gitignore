@@ -8,6 +8,9 @@
 # Ignore temporary files
 /app/__pycache__
 /.ipynb_checkpoints
+/.terraform.lock.hcl
+/terraform.tfstate
+/terraform.tfstate.backup
 
 #ignore logs and accs info files
 /*.json
@@ -15,4 +18,5 @@
 /app/config.ini
 
 # Ignore scratch jupyter notebook
-/govno.ipynb
+/scratch.ipynb
+
