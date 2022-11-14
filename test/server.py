@@ -1,3 +1,10 @@
-from api import LoadBalancerAPI
+from app.utils.api import LoadBalancerAPI
 
-server = LoadBalancerAPI()
+
+def main():
+    # config = configparser.ConfigParser()
+    server = LoadBalancerAPI()
+
+
+if __name__ == "__main__":
+    main()

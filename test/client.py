@@ -1,8 +1,14 @@
-from api import NodeAPI
+from app.utils.api import NodeAPI
 
-# config = configparser.ConfigParser()
 
-IP = 'localhost'
-port = 12345
+def main():
+    # config = configparser.ConfigParser()
 
-client = NodeAPI(IP, port)
+    ip = 'localhost'
+    port = 12345
+
+    client = NodeAPI(ip, port)
+
+
+if __name__ == "__main__":
+    main()
