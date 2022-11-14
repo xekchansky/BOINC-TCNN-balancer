@@ -1,4 +1,4 @@
-from app.utils.api import LoadBalancerAPI
+from utils.api import LoadBalancerAPI
 
 
 def main():

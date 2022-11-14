@@ -1,4 +1,4 @@
-from app.utils.api import NodeAPI
+from utils.api import NodeAPI
 
 
 def main():

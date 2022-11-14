@@ -26,10 +26,16 @@ class API:
         self.msg_header_size = 10
         self.msg_type_size = 5
         self.encoding = 'UTF-8'
-        self.msg_types = {}
+        self.msg_types = {
+            'STOP': self.stop,
+        }
 
     def __del__(self):
         sys.exit()
+
+    def stop(self, msg):
+        msg.decode(self.encoding)
+        self.__del__()
 
     def wait_for_threads(self):
         for thread in self.threads:
@@ -115,6 +121,12 @@ class LoadBalancerAPI(API):
     def __del__(self):
         super().__del__()
 
+    def stop(self, msg):
+        for node in list(self.nodes):
+            if not self.send_message('STOP', msg, node.socket):
+                self.lost_connection(node)
+        super().stop(msg)
+
     def run_server(self):
         self.load_balancer.socket.bind(self.load_balancer.addr)
         self.load_balancer.socket.listen()
@@ -156,7 +168,6 @@ class NodeAPI(API):
             'ECHO': self.echo,
             'HELLO': self.hello,
             'NODES': self.update_known_nodes,
-            'STOP': self.stop,
         }
         self.msg_types.update(node_msg_types)
 
@@ -212,7 +223,3 @@ class NodeAPI(API):
                 self.nodes.add(new_node)
                 self.known_nodes_addr.add(node_addr)
                 self.send_message('HELLO', bytes(f'Hi from {self.my_addr}', self.encoding), new_node.socket)
-
-    def stop(self, msg):
-        msg.decode(self.encoding)
-        self.__del__()
