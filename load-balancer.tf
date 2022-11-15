@@ -18,6 +18,8 @@ data "yandex_compute_image" "container-optimized-image" {
 resource "yandex_compute_instance" "instance-based-on-coi" {
   #name = "load_balancer"
 
+  service_account_id = "ajebtl7fah698jqc8v6o"
+
   resources {
     cores  = 2
     memory = 2
@@ -36,7 +38,7 @@ resource "yandex_compute_instance" "instance-based-on-coi" {
 
   metadata = {
     docker-container-declaration = file("${path.module}/declaration.yaml")
-    ssh-keys = "ubuntu:${file("~/.ssh/id_ed25519.pub")}"
+    user-data                    = file("${path.module}/cloud-config.yaml")
   }
 }
 

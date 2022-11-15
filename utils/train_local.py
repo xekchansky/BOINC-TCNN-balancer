@@ -9,8 +9,7 @@ from torch.utils.data import Dataset
 from torchsummary import summary
 from tqdm import tqdm
 
-import Kylberg
-import models
+from utils import models, Kylberg
 
 
 class TextureCNN:

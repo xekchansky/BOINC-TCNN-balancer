@@ -177,8 +177,12 @@ class NodeAPI(API):
         super().__del__()
 
     def run_node(self):
+        print(f'lb: {self.load_balancer.addr}')
+        print(f'connecting...')
         self.load_balancer.socket.connect(self.load_balancer.addr)
+        print(f'connected to {self.load_balancer.addr}')
         self.spawn_listener(self.load_balancer)
+
 
         while self.my_addr_for_lb is None:
             sleep(0.1)

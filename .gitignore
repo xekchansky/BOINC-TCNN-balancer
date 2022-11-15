@@ -11,12 +11,13 @@
 /.terraform.lock.hcl
 /terraform.tfstate
 /terraform.tfstate.backup
+/.terraform.tfstate.lock.info
 
 #ignore logs and accs info files
 /*.json
 /logs/*
 /app/config.ini
+/cloud-config.yaml
 
 # Ignore scratch jupyter notebook
 /scratch.ipynb
-
