@@ -6,13 +6,16 @@ from time import sleep
 
 
 class Node:
-    __slots__ = ['addr', 'socket']
+    __slots__ = ['addr', 'socket', 'send_msg_lock']
 
     def __init__(self, addr=None, s=None):
         self.addr = addr
         self.socket = s
+        self.send_msg_lock = threading.Lock()
 
     def __del__(self):
+        if self.send_msg_lock.locked():
+            self.send_msg_lock.release()
         self.socket.close()
 
 
@@ -28,18 +31,20 @@ class API:
         self.encoding = 'UTF-8'
         self.msg_types = {
             'STOP': self.stop,
+            'PING': self.ack
         }
 
     def __del__(self):
         sys.exit()
 
-    def stop(self, msg):
-        msg.decode(self.encoding)
+    def stop(self, msg, sender):
         self.__del__()
 
     def wait_for_threads(self):
-        for thread in self.threads:
-            thread.join()
+        while len(self.threads):
+            for thread in list(self.threads):
+                thread.join()
+                self.threads.remove(thread)
 
     def new_connection(self, connection):
         new_node = Node(connection[1], connection[0])
@@ -73,38 +78,50 @@ class API:
         self.lost_connection(node)
         sys.exit()
 
-    def send_message(self, msg_type, msg, target_socket):
+    def send_message(self, msg_type, msg, target_node):
         msg = bytes(f'{len(msg):<{self.msg_header_size}}{msg_type:<{self.msg_type_size}}', self.encoding) + msg
         try:
-            target_socket.sendall(msg)
+            target_node.send_msg_lock.acquire()
+            target_node.socket.sendall(msg)
+            target_node.send_msg_lock.release()
             return True
         except socket.error:
+            target_node.send_msg_lock.release()
             return False
 
-    def receive_message(self, target_socket):
+    def receive_message(self, target_node):
         try:
-            msg_header = target_socket.recv(self.msg_header_size).decode(self.encoding)
+            msg_header = target_node.socket.recv(self.msg_header_size).decode(self.encoding)
             if not len(msg_header):
                 return False
             msg_len = int(msg_header)
-            msg_type = target_socket.recv(self.msg_type_size).decode(self.encoding).strip()
-            msg_data = target_socket.recv(msg_len)
+            msg_type = target_node.socket.recv(self.msg_type_size).decode(self.encoding).strip()
+            msg_data = target_node.socket.recv(msg_len)
             return {"type": msg_type, "data": msg_data}
         except socket.error as e:
             print(e)
             return False
 
-    def process_messages(self, target_socket):
+    def process_messages(self, target_node):
         while True:
-            msg = self.receive_message(target_socket)
+            msg = self.receive_message(target_node)
             if msg:
                 if msg['type'] in self.msg_types.keys():
-                    self.msg_types[msg['type']](msg['data'])
+                    self.msg_types[msg['type']](msg=msg['data'], sender=target_node)
                 else:
                     print('UNKNOWN MSG TYPE:', msg['type'], msg['data'])
                     print('known msg types:', self.msg_types.keys())
             else:
                 break
+
+    def send_ping(self, target_node):
+        self.send_message(msg_type='PING', msg='', target_node=target_node)
+
+    def ping(self, msg, sender):
+        self.send_message(msg_type='ACK', msg=msg, target_node=sender)
+
+    def ack(self, *_):
+        pass
 
 
 class LoadBalancerAPI(API):
@@ -112,7 +129,6 @@ class LoadBalancerAPI(API):
         super().__init__(ip, port, logger)
 
         load_balancer_msg_types = {
-            'APORT': self.add_acceptor_port,
         }
         self.msg_types.update(load_balancer_msg_types)
 
@@ -121,23 +137,23 @@ class LoadBalancerAPI(API):
     def __del__(self):
         super().__del__()
 
-    def stop(self, msg):
+    def stop(self, msg, sender):
         for node in list(self.nodes):
             if not self.send_message('STOP', msg, node.socket):
                 self.lost_connection(node)
-        super().stop(msg)
+        super().stop(msg, sender)
 
-    def run_server(self):
+    def run_server(self, heartbeat_rate=10):
         self.load_balancer.socket.bind(self.load_balancer.addr)
         self.load_balancer.socket.listen()
         self.spawn_connection_accepter(self.load_balancer.socket)
         while True:
-            sleep(5)
-            self.broadcast_members()
+            sleep(heartbeat_rate)
+            self.broadcast_members()  # works as ping_members
 
-    def new_connection(self, connection):
-        super().new_connection(connection)
-        self.send_message("ECHO", pickle.dumps(connection[1]), connection[0])
+    def ping_members(self):
+        for node in self.nodes:
+            self.send_ping(node)
 
     def broadcast_members(self):
         msg = pickle.dumps([node.addr for node in self.nodes])
@@ -145,28 +161,14 @@ class LoadBalancerAPI(API):
             if not self.send_message('NODES', msg, node.socket):
                 self.lost_connection(node)
 
-    def add_acceptor_port(self, msg):
-        addr, port = pickle.loads(msg)
-        for node in self.nodes:
-            if node.addr == addr:
-                node.addr = (node.addr[0], port)
-
 
 class NodeAPI(API):
     def __init__(self, ip='localhost', port=12345, logger=None):
         super().__init__(ip, port, logger)
 
-        self.acceptor_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.acceptor_socket.bind(('', 0))
-        self.acceptor_port = self.acceptor_socket.getsockname()[1]
-
         self.known_nodes_addr = set()
-        self.my_addr = None
-        self.my_addr_for_lb = None
 
         node_msg_types = {
-            'ECHO': self.echo,
-            'HELLO': self.hello,
             'NODES': self.update_known_nodes,
         }
         self.msg_types.update(node_msg_types)
@@ -177,32 +179,11 @@ class NodeAPI(API):
         super().__del__()
 
     def run_node(self):
-        print(f'lb: {self.load_balancer.addr}')
-        print(f'connecting...')
         self.load_balancer.socket.connect(self.load_balancer.addr)
-        print(f'connected to {self.load_balancer.addr}')
         self.spawn_listener(self.load_balancer)
-
-        while self.my_addr_for_lb is None:
-            sleep(0.1)
-
-        if self.my_addr_for_lb is not None:
-            msg = pickle.dumps((self.my_addr_for_lb, self.acceptor_port))
-            self.send_message('APORT', msg, self.load_balancer.socket)
-            self.my_addr = (self.my_addr_for_lb[0], self.acceptor_port)
-
-        # weak place ip of acceptor probably could be wrong
-        self.acceptor_socket.listen()
-        self.spawn_connection_accepter(self.acceptor_socket)
         self.wait_for_threads()
 
-    def echo(self, msg):
-        self.my_addr_for_lb = pickle.loads(msg)
-
-    def hello(self, msg):
-        print(msg.decode(self.encoding))
-
-    def update_known_nodes(self, msg):
+    def update_known_nodes(self, msg, *_):
         lb_nodes_addr = set(pickle.loads(msg))
 
         # remove disconnected nodes
@@ -215,14 +196,7 @@ class NodeAPI(API):
 
         # add new nodes
         for node_addr in lb_nodes_addr:
-            if node_addr not in self.known_nodes_addr \
-                    and node_addr != self.my_addr_for_lb \
-                    and node_addr != self.my_addr:
+            if node_addr not in self.known_nodes_addr:
                 new_node = Node(node_addr, socket.socket(socket.AF_INET, socket.SOCK_STREAM))
-                print('my accept addr = ', self.acceptor_socket.getsockname())
-                print('connecting to ', node_addr)
-                new_node.socket.connect(node_addr)
-                self.spawn_listener(new_node)
                 self.nodes.add(new_node)
                 self.known_nodes_addr.add(node_addr)
-                self.send_message('HELLO', bytes(f'Hi from {self.my_addr}', self.encoding), new_node.socket)
