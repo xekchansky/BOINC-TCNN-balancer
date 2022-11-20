@@ -1,8 +1,6 @@
-import pickle
 import socket
 import sys
 import threading
-from time import sleep
 
 
 class Node:
@@ -27,7 +25,7 @@ class API:
         self.logger = logger
 
         self.msg_header_size = 10
-        self.msg_type_size = 5
+        self.msg_type_size = 15
         self.encoding = 'UTF-8'
         self.msg_types = {
             'STOP': self.stop,
@@ -38,7 +36,7 @@ class API:
     def __del__(self):
         sys.exit()
 
-    def stop(self, msg, sender):
+    def stop(self, *_, **__):
         self.__del__()
 
     def wait_for_threads(self):
@@ -116,90 +114,12 @@ class API:
                 break
 
     def send_ping(self, target_node):
-        self.send_message(msg_type='PING', msg='', target_node=target_node)
+        if not self.send_message(msg_type='PING', msg='', target_node=target_node):
+            self.lost_connection(target_node)
 
     def ping(self, msg, sender):
-        self.send_message(msg_type='ACK', msg=msg, target_node=sender)
+        if not self.send_message(msg_type='ACK', msg=msg, target_node=sender):
+            self.lost_connection(sender)
 
-    def ack(self, *_):
+    def ack(self, *_, **__):
         pass
-
-
-class LoadBalancerAPI(API):
-    def __init__(self, ip='localhost', port=12345, logger=None):
-        super().__init__(ip, port, logger)
-
-        load_balancer_msg_types = {
-        }
-        self.msg_types.update(load_balancer_msg_types)
-
-        self.run_server()
-
-    def __del__(self):
-        super().__del__()
-
-    def stop(self, msg, sender):
-        for node in list(self.nodes):
-            if not self.send_message('STOP', msg, node.socket):
-                self.lost_connection(node)
-        super().stop(msg, sender)
-
-    def run_server(self, heartbeat_rate=10):
-        self.load_balancer.socket.bind(self.load_balancer.addr)
-        self.load_balancer.socket.listen()
-        self.spawn_connection_accepter(self.load_balancer.socket)
-        while True:
-            sleep(heartbeat_rate)
-            self.broadcast_members()  # works as ping_members
-
-    def ping_members(self):
-        for node in self.nodes:
-            self.send_ping(node)
-
-    def broadcast_members(self):
-        msg = pickle.dumps([node.addr for node in self.nodes])
-        for node in list(self.nodes):
-            if not self.send_message('NODES', msg, node):
-                self.lost_connection(node)
-
-
-class NodeAPI(API):
-    def __init__(self, ip='localhost', port=12345, logger=None):
-        super().__init__(ip, port, logger)
-
-        self.known_nodes_addr = set()
-
-        node_msg_types = {
-            'NODES': self.update_known_nodes,
-        }
-        self.msg_types.update(node_msg_types)
-
-        self.run_node()
-
-    def __del__(self):
-        super().__del__()
-
-    def run_node(self):
-        self.load_balancer.socket.connect(self.load_balancer.addr)
-        self.spawn_listener(self.load_balancer)
-        self.wait_for_threads()
-
-    def update_known_nodes(self, msg, *_, **__):
-        lb_nodes_addr = set(pickle.loads(msg))
-
-        # remove disconnected nodes
-        for node_addr in list(self.known_nodes_addr):
-            if node_addr not in lb_nodes_addr:
-                for node in list(self.nodes):
-                    if node.addr == node_addr:
-                        self.nodes.remove(node)
-                        self.known_nodes_addr.remove(node_addr)
-
-        # add new nodes
-        for node_addr in lb_nodes_addr:
-            if node_addr not in self.known_nodes_addr:
-                new_node = Node(node_addr, socket.socket(socket.AF_INET, socket.SOCK_STREAM))
-                self.nodes.add(new_node)
-                self.known_nodes_addr.add(node_addr)
-
-        print(self.known_nodes_addr)
