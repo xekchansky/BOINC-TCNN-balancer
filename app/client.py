@@ -1,22 +1,29 @@
+import argparse
 import json
-import pathlib
 import os
+import pathlib
 import sys
+
 sys.path.insert(1, str(pathlib.Path(__file__).parent.parent.resolve()))
 from utils.api import NodeAPI
 
 
-def main():
-    # config = configparser.ConfigParser()
-    output_path = os.path.join(str(pathlib.Path(__file__).parent.parent.resolve()), 'terraform_output.json')
-    with open(output_path) as f:
-        data = json.load(f)
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--ip', type=str, required=False, default=None)
+    parser.add_argument('--port', type=int, required=False, default=12345)
+    return parser.parse_args()
 
-    ip = data['external_ip_address_load_balancer']['value']
-    port = 12345
+
+def main(ip, port):
+    if ip is None:
+        output_path = os.path.join(str(pathlib.Path(__file__).parent.parent.resolve()), 'terraform_output.json')
+        with open(output_path) as f:
+            ip = json.load(f)['external_ip_address_load_balancer']['value']
 
     NodeAPI(ip, port)
 
 
 if __name__ == "__main__":
-    main()
+    args = parse_args()
+    main(args.ip, args.port)

@@ -31,7 +31,8 @@ class API:
         self.encoding = 'UTF-8'
         self.msg_types = {
             'STOP': self.stop,
-            'PING': self.ack
+            'PING': self.ping,
+            'ACK': self.ack,
         }
 
     def __del__(self):
@@ -74,7 +75,7 @@ class API:
         self.threads.append(thread)
 
     def listener_routine(self, node):
-        self.process_messages(node.socket)
+        self.process_messages(node)
         self.lost_connection(node)
         sys.exit()
 
@@ -158,7 +159,7 @@ class LoadBalancerAPI(API):
     def broadcast_members(self):
         msg = pickle.dumps([node.addr for node in self.nodes])
         for node in list(self.nodes):
-            if not self.send_message('NODES', msg, node.socket):
+            if not self.send_message('NODES', msg, node):
                 self.lost_connection(node)
 
 
@@ -183,7 +184,7 @@ class NodeAPI(API):
         self.spawn_listener(self.load_balancer)
         self.wait_for_threads()
 
-    def update_known_nodes(self, msg, *_):
+    def update_known_nodes(self, msg, *_, **__):
         lb_nodes_addr = set(pickle.loads(msg))
 
         # remove disconnected nodes
@@ -200,3 +201,5 @@ class NodeAPI(API):
                 new_node = Node(node_addr, socket.socket(socket.AF_INET, socket.SOCK_STREAM))
                 self.nodes.add(new_node)
                 self.known_nodes_addr.add(node_addr)
+
+        print(self.known_nodes_addr)
