@@ -1,31 +1,34 @@
-import boto3
+import os
 import random
 from collections import Counter
+
+import boto3
 from sklearn.model_selection import train_test_split
 
 
-def download_dataset_table():
+def download_dataset_table(path='dataset.txt'):
     s3 = boto3.client('s3', endpoint_url='https://storage.yandexcloud.net')
-    with open('dataset.txt', 'wb') as f:
+    with open(path, 'wb') as f:
         s3.download_fileobj('modified-kylberg-dataset', 'dataset.txt', f)
 
 
-def read_dataset_table():
-    with open('dataset.txt', 'r') as f:
+def read_dataset_table(dataset_path='dataset.txt'):
+    with open(dataset_path, 'r') as f:
         data = [line.strip() for line in f]
     target = [image.split('-')[0] for image in data]
     return data, target
 
 
 class DataDistributor:
-    def __init__(self, members_estimate=5, replication_factor=3, seed=42):
+    def __init__(self, members_estimate=5, replication_factor=3, seed=42, dataset_path='dataset.txt'):
         if replication_factor > members_estimate:
             print('Data partition size > dataset size, setting partition size to dataset size')
             replication_factor = members_estimate
         self.seed = seed
 
-        # download_dataset_table()
-        data, target = read_dataset_table()
+        if not os.path.exists(dataset_path):
+            download_dataset_table(dataset_path)
+        data, target = read_dataset_table(dataset_path)
         self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(data, target, test_size=0.2,
                                                                                 random_state=seed)
         train_data_size = len(self.X_train)

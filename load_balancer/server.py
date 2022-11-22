@@ -1,12 +1,16 @@
 import argparse
 import hashlib
+import logging
 import pathlib
 import pickle
 import sys
 from time import sleep
 
+from data_distributor import DataDistributor
+
 sys.path.insert(1, str(pathlib.Path(__file__).parent.parent.resolve()))
 from utils.api import API
+from utils.logging_handlers import LocalHandler
 
 
 def get_fingerprint(string):
@@ -18,7 +22,10 @@ class LoadBalancerAPI(API):
         super().__init__(ip, port, logger)
 
         load_balancer_msg_types = {
+            'DATASET_REQUEST': self.send_dataset,
+            'TEST_REQUEST': self.send_test_dataset,
             'ADMIN_CONNECT': self.admin_auth,
+            'START': self.start,
         }
         self.msg_types.update(load_balancer_msg_types)
 
@@ -26,17 +33,19 @@ class LoadBalancerAPI(API):
         self.non_auth_admin = None
         self.admin = None
 
+        self.ds = DataDistributor(members_estimate=150)
+
     def __del__(self):
         super().__del__()
 
-    def stop(self, msg, sender):
+    def stop(self, msg, *_, **__):
         for node in list(self.nodes):
             if not self.send_message('STOP', msg, node):
                 self.lost_connection(node)
         if self.admin is not None:
             del self.admin
             self.admin = None
-        super().stop(msg, sender)
+        super().stop(msg)
 
     def run(self, heartbeat_rate=10):
         self.load_balancer.socket.bind(self.load_balancer.addr)
@@ -45,6 +54,16 @@ class LoadBalancerAPI(API):
         while True:
             sleep(heartbeat_rate)
             self.broadcast_members()  # works as ping_members
+
+    def send_dataset(self, sender, *_, **__):
+        x_train, y_train = self.ds.get_data_part()
+        msg = pickle.dumps((x_train, y_train))
+        self.send_message(msg_type='DATASET', msg=msg, target_node=sender)
+
+    def send_test_dataset(self, sender, *_, **__):
+        x_test, y_test = self.ds.get_test_data()
+        msg = pickle.dumps((x_test, y_test))
+        self.send_message(msg_type='TEST_DATASET', msg=msg, target_node=sender)
 
     def admin_auth(self, msg, sender):
         self.non_auth_admin = sender
@@ -57,18 +76,25 @@ class LoadBalancerAPI(API):
         else:
             self.send_message(msg_type='ADMIN_REJECTED', msg=b'', target_node=sender)
 
+    def start(self, msg, *_, **__):
+        for node in list(self.nodes):
+            if not self.send_message('START', msg, node):
+                self.lost_connection(node)
+
     def ping_members(self):
         for node in self.nodes:
             self.send_ping(node)
 
     def broadcast_members(self):
-        msg = pickle.dumps([node.addr for node in self.nodes])
-        for node in list(self.nodes):
+        node_addr_list = [node.addr for node in self.nodes]
+        for i, node in enumerate(list(self.nodes)):
+            msg = pickle.dumps((i, node_addr_list))
             if not self.send_message('NODES', msg, node):
                 self.lost_connection(node)
 
         if self.admin is not None:
             print('sending members to admin')
+            msg = pickle.dumps((-1, node_addr_list))
             if not self.send_message('NODES', msg, self.admin):
                 self.admin = None
 
@@ -82,7 +108,11 @@ def parse_args():
 
 
 def main(ip, port, admin_password):
-    LoadBalancerAPI(ip=ip, port=port, admin_password=admin_password).run()
+    logger = logging.getLogger("")
+    logger.setLevel(logging.DEBUG)
+    logger.addHandler(LocalHandler('logs'))
+
+    LoadBalancerAPI(ip=ip, port=port, admin_password=admin_password, logger=logger).run()
 
 
 if __name__ == "__main__":

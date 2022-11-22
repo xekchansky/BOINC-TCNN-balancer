@@ -3,6 +3,6 @@
 #imageio==2.22.4
 #pandas==1.5.1
 #sklearn==0.0.post1
-#torch==1.13.0
+torch==1.13.0+cpu # -f https://download.pytorch.org/whl/torch_stable.html
+kafka-python==2.0.2
 #torch-summary==1.4.5
-#horovod[pytorch]==0.26.1

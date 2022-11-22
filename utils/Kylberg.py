@@ -13,14 +13,11 @@ from sklearn import preprocessing
 
 def make_dataframe(data_path='data', return_df=False, train=True):
     data = []
-    parts_in_validation = {'040', '039', '038', '037'}
-    for folder in os.listdir(data_path):
-        for file in os.listdir(data_path + '/' + folder):
-            path = '/'.join([data_path, folder, file])
-            name = file.split('-')
-            row = [path, name[1], name[2][1:], name[3], name[4][1:4], name[0]]
-            if train != (row[2] in parts_in_validation):
-                data.append(row)
+    for file in os.listdir(data_path):
+        path = '/'.join([data_path, file])
+        name = file.split('-')
+        row = [path, name[0]]
+        data.append(row)
     if return_df:
         return pd.DataFrame(data, columns=['path', 'original image', 'part', 'crop', 'rotation', 'label'])
     return sorted(data)
@@ -29,10 +26,10 @@ def make_dataframe(data_path='data', return_df=False, train=True):
 class KylbergDataset(Dataset):
     def __init__(self, data_path='data', train=True):
         self.data = make_dataframe(data_path=data_path, train=train)
-        self.labels = sorted(list(set(np.array(self.data).T[5])))
+        self.labels = sorted(list(set(np.array(self.data).T[1])))
         self.label_encoder = preprocessing.LabelEncoder()
         self.label_encoder.fit(self.labels)
-        self.target = self.label_encoder.transform(np.array(self.data).T[5])
+        self.target = self.label_encoder.transform(np.array(self.data).T[1])
 
     def __len__(self):
         return len(self.data) // 12

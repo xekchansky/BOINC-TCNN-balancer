@@ -48,12 +48,14 @@ class API:
     def new_connection(self, connection):
         new_node = Node(connection[1], connection[0])
         print('node connected', new_node.addr)
+        self.logger.info('node connected: %s', new_node.addr)
         self.nodes.add(new_node)
         self.spawn_listener(new_node)
 
     def lost_connection(self, node):
         if node in self.nodes:
             print('node disconnected', node.addr)
+            self.logger.info('node disconnected: %s', node.addr)
             self.nodes.remove(node)
 
     def spawn_connection_accepter(self, target_socket):
@@ -95,7 +97,9 @@ class API:
                 return False
             msg_len = int(msg_header)
             msg_type = target_node.socket.recv(self.msg_type_size).decode(self.encoding).strip()
-            msg_data = target_node.socket.recv(msg_len)
+            msg_data = b''
+            while len(msg_data) < msg_len - self.msg_type_size:
+                msg_data += target_node.socket.recv(msg_len)
             return {"type": msg_type, "data": msg_data}
         except socket.error as e:
             print(e)

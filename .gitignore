@@ -4,6 +4,7 @@
 */cropped_data
 */data
 */data.zip
+/data/*
 
 # Ignore temporary files
 /app/__pycache__
@@ -21,3 +22,4 @@
 
 # Ignore scratch jupyter notebook
 /scratch.ipynb
+
