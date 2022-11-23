@@ -1,8 +1,10 @@
 import argparse
 import json
+import logging
 import threading
 
 from app.client import NodeAPI
+from utils.logging_handlers import LocalHandler
 
 
 class AdminUI:
@@ -33,11 +35,16 @@ class AdminUI:
         return res, res_dict
 
     def get_members(self):
-        members = self.admin_node.known_nodes_addr
-        print('Total members: ', len(members))
+        members = self.admin_node.connected_nodes_addr
+        ready_members = self.admin_node.ready_nodes_addr
+        print('Total members: ', len(members) + len(ready_members))
+        print('Ready: ', len(ready_members))
+        print('Downloading: ', len(members))
         print('Members: ')
+        for ready_member in ready_members:
+            print(ready_member, 'READY')
         for member in members:
-            print(member)
+            print(member, 'DOWNLOADING')
 
     def start(self):
         self.admin_node.send_message(msg_type='START', msg=b'', target_node=self.admin_node.load_balancer)
@@ -93,7 +100,12 @@ def main(ip, port):
     if ip is None:
         with open('terraform_output.json') as f:
             ip = json.load(f)['external_ip_address_load_balancer']['value']
-    AdminNode(ip=ip, port=port).run()
+
+    logger = logging.getLogger("")
+    logger.setLevel(logging.DEBUG)
+    logger.addHandler(LocalHandler('logs'))
+
+    AdminNode(ip=ip, port=port, logger=logger).run()
 
 
 if __name__ == "__main__":

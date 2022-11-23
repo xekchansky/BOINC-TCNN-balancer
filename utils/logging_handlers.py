@@ -52,6 +52,8 @@ class LocalHandler(logging.Handler):
             f.write('START' + now)
 
     def emit(self, record):
+        if 'botocore' in record.name:
+            return
         msg = self.format(record)
         with open(self.file_path, 'a') as f:
             f.write(f'\n{datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")} {msg}')

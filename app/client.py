@@ -7,7 +7,7 @@ import pickle
 import socket
 import sys
 import threading
-from time import sleep
+from time import sleep, time
 
 import boto3
 
@@ -20,7 +20,8 @@ class NodeAPI(API):
     def __init__(self, ip='localhost', port=12345, logger=None):
         super().__init__(ip, port, logger)
 
-        self.known_nodes_addr = set()
+        self.connected_nodes_addr = set()
+        self.ready_nodes_addr = []
         self.id = None
 
         node_msg_types = {
@@ -42,11 +43,12 @@ class NodeAPI(API):
         self.wait_for_threads()
 
     def request_dataset(self):
+        """Request filenames for local training dataset"""
         self.send_message(msg_type='DATASET_REQUEST', msg=b'', target_node=self.load_balancer)
 
     def download_dataset(self, msg, *_, **__):
+        """Download of dataset images by received filenames"""
         x_train, y_train = pickle.loads(msg)
-        print('downloading objects:', len(x_train))
 
         if not os.path.exists(self.data_path):
             os.mkdir(self.data_path)
@@ -58,7 +60,8 @@ class NodeAPI(API):
                 with open(file_path, 'wb') as f:
                     s3.download_fileobj('modified-kylberg-dataset', os.path.join('dataset', file_name), f)
 
-        print('objects downloaded')
+        sleep(15)
+        self.send_message(msg_type='READY', msg=b'', target_node=self.load_balancer)
 
     def start(self, *_, **__):
         thread = threading.Thread(target=self.routine, args=())
@@ -66,28 +69,59 @@ class NodeAPI(API):
         thread.start()
 
     def routine(self):
+        """Learning routine after 'START' message"""
         while True:
-            sleep(2)
-            print(self.id)
+            start = time()
+            sleep(2)  # do something
+            elapsed_time = time() - start
+            msg=pickle.dumps((self.id, elapsed_time))
+            self.send_message(msg_type='SUBMIT', msg=msg, target_node=self.load_balancer)
+
+    def remove_node_by_addr(self, node_addr):
+        for node in list(self.nodes):
+            if node.addr == node_addr:
+                self.nodes.remove(node)
+                self.connected_nodes_addr.remove(node_addr)
+        for node in list(self.ready_nodes):
+            if node.addr == node_addr:
+                self.ready_nodes.remove(node)
+                self.ready_nodes_addr.remove(node_addr)
+
+    def move_node_to_ready_by_addr(self, node_addr):
+        for node in list(self.nodes):
+            if node.addr == node_addr:
+                self.nodes.remove(node)
+                self.ready_nodes.append(node)
+                self.connected_nodes_addr.remove(node_addr)
+                self.ready_nodes_addr.append(node_addr)
 
     def update_known_nodes(self, msg, *_, **__):
-        i, lb_nodes_addr = pickle.loads(msg)
+        i, lb_nodes_addr, lb_ready_nodes_addr = pickle.loads(msg)
         self.id = i
 
         # remove disconnected nodes
-        for node_addr in list(self.known_nodes_addr):
-            if node_addr not in lb_nodes_addr:
-                for node in list(self.nodes):
-                    if node.addr == node_addr:
-                        self.nodes.remove(node)
-                        self.known_nodes_addr.remove(node_addr)
+        for node_addr in (list(self.connected_nodes_addr) + list(self.ready_nodes_addr)):
+            if (node_addr not in lb_nodes_addr) and (node_addr not in lb_ready_nodes_addr):
+                self.remove_node_by_addr(node_addr)
 
-        # add new nodes
+        # move to ready nodes
+        for node_addr in list(self.connected_nodes_addr):
+            if node_addr in lb_ready_nodes_addr:
+                self.move_node_to_ready_by_addr(node_addr)
+
+        # add new connected nodes
         for node_addr in lb_nodes_addr:
-            if node_addr not in self.known_nodes_addr:
+            if node_addr not in self.connected_nodes_addr:
                 new_node = Node(node_addr, socket.socket(socket.AF_INET, socket.SOCK_STREAM))
                 self.nodes.add(new_node)
-                self.known_nodes_addr.add(node_addr)
+                self.connected_nodes_addr.add(node_addr)
+
+        # add new ready nodes
+        for node_addr in lb_ready_nodes_addr:
+            if node_addr not in self.ready_nodes_addr:
+                new_node = Node(node_addr, socket.socket(socket.AF_INET, socket.SOCK_STREAM))
+                self.ready_nodes.append(new_node)
+                self.ready_nodes_addr.append(node_addr)
 
 
 def parse_args():

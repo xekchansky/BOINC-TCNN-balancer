@@ -25,6 +25,7 @@ class LoadBalancerAPI(API):
             'DATASET_REQUEST': self.send_dataset,
             'TEST_REQUEST': self.send_test_dataset,
             'ADMIN_CONNECT': self.admin_auth,
+            'READY': self.move_to_ready_nodes,
             'START': self.start,
         }
         self.msg_types.update(load_balancer_msg_types)
@@ -32,6 +33,8 @@ class LoadBalancerAPI(API):
         self.admin_fingerprint = get_fingerprint(admin_password)
         self.non_auth_admin = None
         self.admin = None
+
+        self.started = False
 
         self.ds = DataDistributor(members_estimate=150)
 
@@ -76,25 +79,62 @@ class LoadBalancerAPI(API):
         else:
             self.send_message(msg_type='ADMIN_REJECTED', msg=b'', target_node=sender)
 
+    def move_to_ready_nodes(self, sender, *_, **__):
+        self.nodes.remove(sender)
+        self.ready_nodes.append(sender)
+
+        if self.started:
+            if not self.send_message('START', b'', sender):
+                self.lost_connection(sender)
+        self.broadcast_members()
+
     def start(self, msg, *_, **__):
-        for node in list(self.nodes):
+        self.started = True
+
+        for node in list(self.ready_nodes):
             if not self.send_message('START', msg, node):
                 self.lost_connection(node)
+
+    def forward(self, msg, sender, *_, **__):
+        _, _ = pickle.loads(msg)
+        target_node = self.get_next(sender)
+        lost_nodes = False
+        while not self.send_message(msg_type='SUBMIT', msg=msg, target_node=target_node):
+            lost_nodes = True
+            self.lost_connection(target_node)
+            target_node = self.get_next(target_node)
+        if lost_nodes:
+            self.broadcast_members()
+
+    def get_next(self, sender):
+        for i, node in enumerate(self.ready_nodes):
+            if node == sender:
+                if i != len(self.ready_nodes) - 1:
+                    return self.ready_nodes[i + 1]
+                else:
+                    return self.ready_nodes[0]
 
     def ping_members(self):
         for node in self.nodes:
             self.send_ping(node)
+        for node in self.ready_nodes:
+            self.send_ping(node)
 
     def broadcast_members(self):
         node_addr_list = [node.addr for node in self.nodes]
-        for i, node in enumerate(list(self.nodes)):
-            msg = pickle.dumps((i, node_addr_list))
+        ready_node_addr_list = [node.addr for node in self.ready_nodes]
+        for node in list(self.nodes):
+            msg = pickle.dumps((-1, node_addr_list, ready_node_addr_list))
+            if not self.send_message('NODES', msg, node):
+                self.lost_connection(node)
+
+        for i, node in enumerate(self.ready_nodes):
+            msg = pickle.dumps((i, node_addr_list, ready_node_addr_list))
             if not self.send_message('NODES', msg, node):
                 self.lost_connection(node)
 
         if self.admin is not None:
-            print('sending members to admin')
-            msg = pickle.dumps((-1, node_addr_list))
+            msg = pickle.dumps((-1, node_addr_list, ready_node_addr_list))
             if not self.send_message('NODES', msg, self.admin):
                 self.admin = None
 
