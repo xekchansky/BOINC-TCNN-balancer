@@ -28,6 +28,7 @@ class NodeAPI(API):
             'NODES': self.update_known_nodes,
             'START': self.start,
             'DATASET': self.download_dataset,
+            'SUBMIT': self.income_submit,
         }
         self.msg_types.update(node_msg_types)
 
@@ -40,7 +41,7 @@ class NodeAPI(API):
         self.load_balancer.socket.connect(self.load_balancer.addr)
         self.spawn_listener(self.load_balancer)
         self.request_dataset()
-        self.wait_for_threads()
+        self.wait_for_stop()
 
     def request_dataset(self):
         """Request filenames for local training dataset"""
@@ -60,13 +61,13 @@ class NodeAPI(API):
                 with open(file_path, 'wb') as f:
                     s3.download_fileobj('modified-kylberg-dataset', os.path.join('dataset', file_name), f)
 
-        sleep(15)
         self.send_message(msg_type='READY', msg=b'', target_node=self.load_balancer)
 
     def start(self, *_, **__):
         thread = threading.Thread(target=self.routine, args=())
         thread.daemon = True
         thread.start()
+        self.threads.append(thread)
 
     def routine(self):
         """Learning routine after 'START' message"""
@@ -74,8 +75,12 @@ class NodeAPI(API):
             start = time()
             sleep(2)  # do something
             elapsed_time = time() - start
-            msg=pickle.dumps((self.id, elapsed_time))
+            msg = pickle.dumps((self.id, elapsed_time))
             self.send_message(msg_type='SUBMIT', msg=msg, target_node=self.load_balancer)
+
+    def income_submit(self, msg, *_, **__):
+        node_id, elapsed_time = pickle.loads(msg)
+        print(f'ME: {self.id} RECEIVED: {node_id} {elapsed_time}')
 
     def remove_node_by_addr(self, node_addr):
         for node in list(self.nodes):

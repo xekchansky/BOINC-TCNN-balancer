@@ -1,6 +1,7 @@
 import socket
 import sys
 import threading
+from time import sleep
 
 
 class Node:
@@ -23,6 +24,7 @@ class API:
         self.nodes = set()
         self.ready_nodes = []
         self.threads = []
+        self.stopped = False
         self.logger = logger
 
         self.msg_header_size = 10
@@ -39,7 +41,12 @@ class API:
 
     def stop(self, *_, **__):
         self.logger.info('STOPPING')
+        self.stopped = True
         self.__del__()
+
+    def wait_for_stop(self):
+        while not self.stopped:
+            sleep(1)
 
     def wait_for_threads(self):
         while len(self.threads):
@@ -60,7 +67,7 @@ class API:
 
         if node in self.ready_nodes:
             self.logger.info('node disconnected: %s', node.addr)
-            self.nodes.remove(node)
+            self.ready_nodes.remove(node)
 
     def spawn_connection_accepter(self, target_socket):
         thread = threading.Thread(target=self.wait_for_connections, args=(target_socket,))

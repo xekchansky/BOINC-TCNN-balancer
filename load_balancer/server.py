@@ -5,6 +5,7 @@ import pathlib
 import pickle
 import sys
 from time import sleep
+import threading
 
 from data_distributor import DataDistributor
 
@@ -27,6 +28,7 @@ class LoadBalancerAPI(API):
             'ADMIN_CONNECT': self.admin_auth,
             'READY': self.move_to_ready_nodes,
             'START': self.start,
+            'SUBMIT': self.forward,
         }
         self.msg_types.update(load_balancer_msg_types)
 
@@ -45,6 +47,9 @@ class LoadBalancerAPI(API):
         for node in list(self.nodes):
             if not self.send_message('STOP', msg, node):
                 self.lost_connection(node)
+        for node in list(self.ready_nodes):
+            if not self.send_message('STOP', msg, node):
+                self.lost_connection(node)
         if self.admin is not None:
             del self.admin
             self.admin = None
@@ -54,9 +59,8 @@ class LoadBalancerAPI(API):
         self.load_balancer.socket.bind(self.load_balancer.addr)
         self.load_balancer.socket.listen()
         self.spawn_connection_accepter(self.load_balancer.socket)
-        while True:
-            sleep(heartbeat_rate)
-            self.broadcast_members()  # works as ping_members
+        self.spawn_members_broadcaster(heartbeat_rate)  # works as ping_members
+        self.wait_for_stop()
 
     def send_dataset(self, sender, *_, **__):
         x_train, y_train = self.ds.get_data_part()
@@ -89,6 +93,8 @@ class LoadBalancerAPI(API):
         self.broadcast_members()
 
     def start(self, msg, *_, **__):
+        if self.started:
+            return
         self.started = True
 
         for node in list(self.ready_nodes):
@@ -119,6 +125,17 @@ class LoadBalancerAPI(API):
             self.send_ping(node)
         for node in self.ready_nodes:
             self.send_ping(node)
+
+    def spawn_members_broadcaster(self, heartbeat_rate):
+        thread = threading.Thread(target=self.members_broadcaster_routine, args=(heartbeat_rate,))
+        thread.daemon = True
+        thread.start()
+        self.threads.append(thread)
+
+    def members_broadcaster_routine(self, heartbeat_rate):
+        while True:
+            sleep(heartbeat_rate)
+            self.broadcast_members()
 
     def broadcast_members(self):
         node_addr_list = [node.addr for node in self.nodes]
