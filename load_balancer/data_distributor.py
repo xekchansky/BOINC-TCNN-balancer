@@ -1,13 +1,19 @@
 import os
 import random
 from collections import Counter
+import configparser
 
 import boto3
 from sklearn.model_selection import train_test_split
 
 
-def download_dataset_table(path='dataset.txt'):
-    s3 = boto3.client('s3', endpoint_url='https://storage.yandexcloud.net')
+def download_dataset_table(path='dataset.txt', credentials_path='credentials.ini'):
+    config = configparser.ConfigParser()
+    config.read(credentials_path)
+    s3 = boto3.client('s3',
+                      endpoint_url='https://storage.yandexcloud.net',
+                      aws_access_key_id=config['AWS']['access_key_id'],
+                      aws_secret_access_key=config['AWS']['secret_access_key'])
     with open(path, 'wb') as f:
         s3.download_fileobj('modified-kylberg-dataset', 'dataset.txt', f)
 
