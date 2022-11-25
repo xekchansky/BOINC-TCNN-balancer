@@ -23,6 +23,7 @@ class API:
         self.load_balancer = Node((ip, port), socket.socket(socket.AF_INET, socket.SOCK_STREAM))
         self.nodes = set()
         self.ready_nodes = []
+
         self.threads = []
         self.stopped = False
         self.logger = logger
@@ -34,7 +35,9 @@ class API:
             'STOP': self.stop,
             'PING': self.ping,
             'ACK': self.ack,
+            'BIG_MSG_PART': self.process_big_message_part,
         }
+        self.big_messages_buffer = {}
 
     def __del__(self):
         sys.exit()
@@ -91,7 +94,7 @@ class API:
         sys.exit()
 
     def send_message(self, msg_type, msg, target_node):
-        self.logger.debug('SENDING MESSAGE to %s: %s %s', target_node.addr, msg_type, msg)
+        self.logger.debug('SENDING MESSAGE to %s: %s size: %s', target_node.addr, msg_type, len(msg))
         msg = bytes(f'{len(msg):<{self.msg_header_size}}{msg_type:<{self.msg_type_size}}', self.encoding) + msg
         try:
             target_node.send_msg_lock.acquire()
@@ -101,6 +104,33 @@ class API:
         except socket.error:
             target_node.send_msg_lock.release()
             return False
+
+    def send_big_message(self, msg_type, msg, target_node, part_size=8000):
+        self.logger.debug('SENDING BIG MESSAGE to %s: %s size: %s', target_node.addr, msg_type, len(msg))
+        msg_size = len(msg)
+        number_of_submessages = msg_size // part_size + bool(msg_size % part_size)
+        for i in range(number_of_submessages):
+            left = i * part_size
+            right = min(left + part_size, msg_size)
+            submsg = msg[left:right]
+            sub_type = 'BIG_MSG_PART'
+            submsg = bytes(f'{msg_type:<{self.msg_type_size}}{number_of_submessages:<{self.msg_type_size}}', self.encoding) + submsg
+            if not self.send_message(msg_type=sub_type, msg=submsg, target_node=target_node):
+                return False
+        return True
+
+    def process_big_message_part(self, msg, sender):
+        msg_type = msg[:self.msg_type_size].decode(self.encoding).strip()
+        number_of_submessages = int(msg[self.msg_type_size:2 * self.msg_type_size].decode(self.encoding).strip())
+        msg_part = msg[2 * self.msg_type_size:]
+        key = (sender, msg_type)
+        if key in self.big_messages_buffer.keys():
+            self.big_messages_buffer[key][1].append(msg_part)
+        else:
+            self.big_messages_buffer[key] = [number_of_submessages, [msg_part, ]]
+        if len(self.big_messages_buffer[key][1]) == self.big_messages_buffer[key][0]:
+            self.msg_types[msg_type](msg=b''.join(self.big_messages_buffer[key][1]), sender=sender)
+            del self.big_messages_buffer[key]
 
     def receive_message(self, target_node):
         try:
@@ -122,7 +152,10 @@ class API:
         while True:
             msg = self.receive_message(target_node)
             if msg:
-                self.logger.debug('RECEIVED MESSAGE from %s: %s %s', target_node.addr, msg['type'], msg['data'])
+                self.logger.debug('RECEIVED MESSAGE from %s: %s size: %s',
+                                  target_node.addr,
+                                  msg['type'],
+                                  len(msg['data']))
                 if msg['type'] in self.msg_types.keys():
                     self.msg_types[msg['type']](msg=msg['data'], sender=target_node)
                 else:

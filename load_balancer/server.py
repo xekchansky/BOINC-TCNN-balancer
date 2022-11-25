@@ -102,8 +102,8 @@ class LoadBalancerAPI(API):
                 self.lost_connection(node)
 
     def forward(self, msg, sender, *_, **__):
-        _, _ = pickle.loads(msg)
         target_node = self.get_next(sender)
+        print(f'{sender.addr} -> {target_node.addr}')
         lost_nodes = False
         while not self.send_message(msg_type='SUBMIT', msg=msg, target_node=target_node):
             lost_nodes = True

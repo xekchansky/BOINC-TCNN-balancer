@@ -7,13 +7,13 @@ import pickle
 import socket
 import sys
 import threading
-from time import sleep, time
 
 import boto3
 
 sys.path.insert(1, str(pathlib.Path(__file__).parent.parent.resolve()))
 from utils.api import API, Node
 from utils.logging_handlers import LocalHandler
+from utils.horovod import HorovodTrain
 
 
 class NodeAPI(API):
@@ -33,6 +33,7 @@ class NodeAPI(API):
         self.msg_types.update(node_msg_types)
 
         self.data_path = 'data'
+        self.hvd_train = HorovodTrain(api=self, logger=self.logger)
 
     def __del__(self):
         super().__del__()
@@ -71,16 +72,11 @@ class NodeAPI(API):
 
     def routine(self):
         """Learning routine after 'START' message"""
-        while True:
-            start = time()
-            sleep(2)  # do something
-            elapsed_time = time() - start
-            msg = pickle.dumps((self.id, elapsed_time))
-            self.send_message(msg_type='SUBMIT', msg=msg, target_node=self.load_balancer)
+        print('STARTED')
+        self.hvd_train.fit()
 
     def income_submit(self, msg, *_, **__):
-        node_id, elapsed_time = pickle.loads(msg)
-        print(f'ME: {self.id} RECEIVED: {node_id} {elapsed_time}')
+        self.hvd_train.horovod.add_incoming_group(msg)
 
     def remove_node_by_addr(self, node_addr):
         for node in list(self.nodes):

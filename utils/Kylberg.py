@@ -1,14 +1,11 @@
 import os
-import pandas as pd
-import numpy as np
+
 import imageio.v2 as io
-import random
-
+import numpy as np
+import pandas as pd
 import torch
-
-from torch.utils.data import Dataset
-
 from sklearn import preprocessing
+from torch.utils.data import Dataset
 
 
 def make_dataframe(data_path='data', return_df=False, train=True):
@@ -32,13 +29,12 @@ class KylbergDataset(Dataset):
         self.target = self.label_encoder.transform(np.array(self.data).T[1])
 
     def __len__(self):
-        return len(self.data) // 12
+        return len(self.data)
 
     def __getitem__(self, idx):
         if torch.is_tensor(idx):
             idx = idx.tolist()
 
-        idx = idx * 12 + random.randint(0, 11)  # return random rotation for given image part
         try:
             image = np.array(io.imread(self.data[idx][0]))
         except IndexError:
