@@ -19,6 +19,7 @@
 /logs/*
 /app/config.ini
 /cloud-config.yaml
+credentials.ini
 
 # Ignore scratch jupyter notebook
 /scratch.ipynb
