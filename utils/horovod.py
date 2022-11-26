@@ -9,6 +9,8 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
+from tqdm import tqdm
+
 sys.path.insert(1, str(pathlib.Path(__file__).parent.parent.resolve()))
 from utils.Kylberg import KylbergDataset
 from utils.models import tcnn3
@@ -41,7 +43,6 @@ class Group:
 def split_to_groups(tensor, num_members):
     tensor_len = tensor.size()[0]
     group_size = tensor_len // num_members
-    print('group_size: ', group_size)
     groups = {}
     for i in range(num_members):
         left = i * group_size
@@ -83,24 +84,20 @@ class Horovod:
         start_index = num_members - 1 - self.api.id
         for i in range(2 * (num_members - 1)):
             group_index = (start_index + i) % num_members
-            print('GROUP INDEX:', group_index)
-            print('WAITING')
-            print('needed:', min((i + 1), num_members), 'got:', self.groups[group_index].participants_number)
+            # print('GROUP INDEX:', group_index)
+            # print('WAITING')
             while min((i + 1), num_members) > self.groups[group_index].participants_number:
                 self.process_incoming_groups()
                 num_members = len(self.api.ready_nodes)
-            print('needed:', min((i + 1), num_members), 'got:', self.groups[group_index].participants_number)
-            print('PREPARING MESSAGE')
-            print('tensor_size = ', self.groups[group_index].tensor.size())
             msg = (group_index,
                    self.groups[group_index].tensor.tolist(),
                    self.groups[group_index].total_batch_size,
                    self.groups[group_index].participants_number,
                    self.groups[group_index].total_elapsed_time)
             msg = pickle.dumps(msg)
-            print('SENDING ', len(msg))
+            # print('SENDING ', len(msg))
             self.api.send_message(msg_type='SUBMIT', msg=msg, target_node=self.api.load_balancer)
-            print('SENT\n')
+            # print('SENT\n')
 
         #  wait for last groups
         while not self.check_all_completed():
@@ -108,13 +105,14 @@ class Horovod:
 
         self.logger.info('check completion: %s', self.check_all_completed())
         print('all completed:', self.check_all_completed())
+        for group in self.groups.values():
+            group.normalize()
         flatten_layers = torch.cat([self.groups[i].tensor for i in self.groups.keys()], dim=-1)
         self.restore_layers(flatten_layers)
         return max_batch_size
 
     def add_incoming_group(self, msg):
         group_index, tensor_list, total_batch_size, participants_number, total_elapsed_time = pickle.loads(msg)
-        print(f'Received group {group_index}')
         group = Group(torch.tensor(tensor_list).double(), total_batch_size, participants_number, total_elapsed_time)
         group.completed = self.check_group_completion(group)
         self.incoming_groups.append((group_index, group))
@@ -136,7 +134,6 @@ class Horovod:
     def process_incoming_groups(self):
         while len(self.incoming_groups):
             i, group = self.incoming_groups.pop()
-            print(f'Processing group {i}')
             if group.completed:
                 self.groups[i] = group
             else:
@@ -174,19 +171,21 @@ class Horovod:
 
 
 class HorovodTrain:
-    def __init__(self, api, logger=None):
+    def __init__(self, api, logger=None, init_model_path='initial_model.pth'):
         self.api = api
         self.logger = logger
+        self.model_logging_period = 60
 
         self.model = tcnn3()
         self.model.double()
+        self.model.load_state_dict(torch.load(init_model_path))
 
         self.model_size = 81.99 * 1024 * 1024  # 82Mb for 1 image in batch
         self.RAM_size = psutil.virtual_memory().total
         self.max_RAM_usage = 0.75
         # self.max_batch_size = self.RAM_size * self.max_RAM_usage // self.model_size
         # self.max_batch_size = self.get_max_batch_size()
-        self.max_batch_size = 1
+        self.max_batch_size = 50
         ###
 
         self.loss_fn = nn.CrossEntropyLoss()
@@ -212,7 +211,15 @@ class HorovodTrain:
 
         start = time()
         batch_size = self.max_batch_size
-        for img, lbl in self.train_ds_loader:
+
+        # variables for logging model state
+        samples = 0
+        processed_images = 0
+        sub_loss = 0.0
+        sub_acc = 0.0
+        last_log_time = time()
+
+        for img, lbl in tqdm(self.train_ds_loader):
 
             img = torch.reshape(img, [-1, 1, 256, 256])
             self.optimizer.zero_grad()
@@ -223,9 +230,9 @@ class HorovodTrain:
             loss.backward()
             elapsed_time = time() - start
             print('syncing')
-            batch_size = self.horovod.synchronize(batch_size=batch_size,
-                                                  elapsed_time=elapsed_time,
-                                                  max_batch_size=self.max_batch_size)
+            #batch_size = self.horovod.synchronize(batch_size=batch_size,
+            #                                      elapsed_time=elapsed_time,
+            #                                      max_batch_size=self.max_batch_size)
             print(f'batch size: {batch_size}')
             start = time()
             self.optimizer.step()
@@ -234,7 +241,29 @@ class HorovodTrain:
 
             batch_predictions = predict.cpu().detach().numpy()
             predicted_classes = np.array([np.argmax(batch_predictions[i]) for i in range(batch_size)])
-            train_acc += np.sum(predicted_classes == lbl.cpu().numpy())
+            correct_predictions = np.sum(predicted_classes == lbl.cpu().numpy())
+            train_acc += correct_predictions
+
+            samples += 1
+            processed_images += batch_size
+            sub_loss += loss.item() * img.size(0)
+            sub_acc += correct_predictions
+
+            if self.api.id == 0:
+                if (time() - last_log_time) > self.model_logging_period:
+                    msg = f'MODEL STATE: loss: {sub_loss/samples} acc: {sub_acc/processed_images}'
+                    self.logger.info(msg)
+                    samples = 0
+                    processed_images = 0
+                    sub_loss = 0.0
+                    sub_acc = 0.0
+
+            print('loop_loss=', loss.item() * img.size(0))
+            print('acc=', train_acc / processed_images)
 
         train_loss /= len(self.train_ds_loader.sampler)
         train_acc /= len(self.dataset)
+
+        print('EPOCH FINISHED')
+        print(train_loss)
+        print(train_acc)

@@ -6,6 +6,9 @@
 */data.zip
 /data/*
 
+# Ignore initial model file
+/initial_model.pth
+
 # Ignore temporary files
 /app/__pycache__
 /.ipynb_checkpoints
@@ -19,8 +22,8 @@
 /logs/*
 /app/config.ini
 /cloud-config.yaml
-credentials.ini
+/credentials.ini
+/YandexInternalRootCA.crt
 
 # Ignore scratch jupyter notebook
 /scratch.ipynb
-

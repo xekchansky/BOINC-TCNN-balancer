@@ -9,7 +9,8 @@ from torch.utils.data import Dataset
 from torchsummary import summary
 from tqdm import tqdm
 
-from utils import models, Kylberg
+import Kylberg
+import models
 
 
 class TextureCNN:
@@ -58,8 +59,8 @@ class TextureCNN:
         self.train_ds = dataset(train=True)
         self.train_ds_loader = torch.utils.data.DataLoader(self.train_ds, batch_size=batch_size, shuffle=True)
 
-        self.test_ds = dataset(train=False)
-        self.test_ds_loader = torch.utils.data.DataLoader(self.test_ds, batch_size=batch_size, shuffle=False)
+        #self.test_ds = dataset(train=False)
+        #self.test_ds_loader = torch.utils.data.DataLoader(self.test_ds, batch_size=batch_size, shuffle=False)
 
         if show_summary:
             # summary(self.model, tuple([1] + list(np.array(self.train_ds[0][0]).shape)))
@@ -84,6 +85,7 @@ class TextureCNN:
             valid_acc = 0.0
 
             self.model.train()
+            loop = 0
             for img, lbl in tqdm(self.train_ds_loader):
                 if self.gpu:
                     img = img.cuda()
@@ -106,6 +108,12 @@ class TextureCNN:
                 predicted_classes = np.array([np.argmax(batch_predictions[i]) for i in range(batch_size)])
                 train_acc += np.sum(predicted_classes == lbl.cpu().numpy())
 
+                loop += 1
+                print('loop_loss=', loss.item() * img.size(0))
+                print('norm_agg_loss=', train_loss / loop)
+                print('acc=', train_acc / (loop * batch_size))
+
+            '''
             self.model.eval()
             for img, lbl in tqdm(self.test_ds_loader):
                 if self.gpu:
@@ -123,11 +131,13 @@ class TextureCNN:
                 batch_predictions = predict.cpu().detach().numpy()
                 predicted_classes = np.array([np.argmax(batch_predictions[i]) for i in range(batch_size)])
                 valid_acc += np.sum(predicted_classes == lbl.cpu().numpy())
+            '''
+
 
             train_loss /= len(self.train_ds_loader.sampler)
             train_acc /= len(self.train_ds)
-            valid_loss /= len(self.test_ds_loader.sampler)
-            valid_acc /= len(self.test_ds)
+            #valid_loss /= len(self.test_ds_loader.sampler)
+            #valid_acc /= len(self.test_ds)
 
             self.train_losses.append(train_loss)
             self.train_accuracies.append(train_acc)
@@ -164,7 +174,7 @@ class TextureCNN:
 def main():
     TCNN = TextureCNN(model='tcnn3', version='v3.0', device='cpu')
     dataset = Kylberg.KylbergDataset
-    TCNN.fit(dataset, batch_size=16, show_summary=True)
+    TCNN.fit(dataset, batch_size=50, show_summary=True)
 
 
 if __name__ == '__main__':

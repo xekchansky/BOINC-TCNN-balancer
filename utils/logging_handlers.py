@@ -3,40 +3,34 @@ import datetime
 import logging
 import os.path
 
-'''
-class KafkaLoggingHandler(logging.Handler):
+import configparser
+from kafka import KafkaProducer
 
-    def __init__(self, host, port, topic, key=None):
+
+class KafkaLoggingHandler(logging.Handler):
+    def __init__(self, credentials_path = 'credentials.ini', topic='logs', key=None):
         logging.Handler.__init__(self)
-        self.kafka_client = KafkaClient(host, port)
-        self.key = key
-        if key is None:
-            self.producer = SimpleProducer(self.kafka_client, topic)
-        else:
-            self.producer = KeyedProducer(self.kafka_client, topic)
+
+        config = configparser.ConfigParser()
+        config.read(credentials_path)
+        self.producer = KafkaProducer(
+            bootstrap_servers=config['KAFKA']['addr'],
+            security_protocol="SASL_SSL",
+            sasl_mechanism="SCRAM-SHA-512",
+            sasl_plain_username=config['KAFKA']['login'],
+            sasl_plain_password=config['KAFKA']['password'],
+            ssl_cafile="YandexInternalRootCA.crt")
 
     def emit(self, record):
         # drop kafka logging to avoid infinite recursion
         if record.name == 'kafka':
             return
-        try:
-            # use default formatting
-            msg = self.format(record)
-            # produce message
-            if self.key is None:
-                self.producer.send_messages(msg)
-            else:
-                self.producer.send(self.key, msg)
-        except:
-            import traceback
-            ei = sys.exc_info()
-            traceback.print_exception(ei[0], ei[1], ei[2], None, sys.stderr)
-            del ei
+        self.producer.send('logs', str(record).encode('utf-8'), b'key')
+        self.producer.flush()
 
     def close(self):
-        self.producer.stop()
+        self.producer.close()
         logging.Handler.close(self)
-'''
 
 
 class LocalHandler(logging.Handler):

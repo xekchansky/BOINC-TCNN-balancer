@@ -4,6 +4,17 @@ Development of a load balancing system for volunteer distributed computing proje
 ## Data preprocessing
 Follow instructions in ```preprocessing/```
 
+### Kafka Log Broker deploy
+Deployment of Apache Kafka logger
+1) Deploy Kafka as a service on Yandex Cloud
+2) Get certificates
+   ```bash
+   wget "https://storage.yandexcloud.net/cloud-certs/CA.pem" \
+   --output-document YandexInternalRootCA.crt && \
+   chmod 655 YandexInternalRootCA.crt
+   ```
+3) Specify kafka addr, login, password in ```credentials.ini```
+
 ## Load Balancer deploy
 Deployment of load balancer in yandex-cloud
 1) Download [```terraform```](https://www.terraform.io/downloads.html)

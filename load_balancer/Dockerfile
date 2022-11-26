@@ -2,6 +2,7 @@ FROM ubuntu:latest
 WORKDIR home
 COPY /load_balancer load_balancer
 COPY /utils utils
+COPY /credentials.ini credentials.ini
 RUN set -xe \
     && apt-get update \
     && apt-get install python3-pip -y
