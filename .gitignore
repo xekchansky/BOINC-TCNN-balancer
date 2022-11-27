@@ -20,6 +20,7 @@
 #ignore logs and accs info files
 /*.json
 /logs/*
+/experiments_results/
 /app/config.ini
 /cloud-config.yaml
 /credentials.ini
@@ -27,3 +28,4 @@
 
 # Ignore scratch jupyter notebook
 /scratch.ipynb
+

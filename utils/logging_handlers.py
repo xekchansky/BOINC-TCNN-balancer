@@ -8,28 +8,44 @@ from kafka import KafkaProducer
 
 
 class KafkaLoggingHandler(logging.Handler):
-    def __init__(self, credentials_path = 'credentials.ini', topic='logs', key=None):
+    def __init__(self, credentials_path='credentials.ini', topic='logs', key=None):
         logging.Handler.__init__(self)
 
-        config = configparser.ConfigParser()
-        config.read(credentials_path)
-        self.producer = KafkaProducer(
-            bootstrap_servers=config['KAFKA']['addr'],
-            security_protocol="SASL_SSL",
-            sasl_mechanism="SCRAM-SHA-512",
-            sasl_plain_username=config['KAFKA']['login'],
-            sasl_plain_password=config['KAFKA']['password'],
-            ssl_cafile="YandexInternalRootCA.crt")
+        self.config = configparser.ConfigParser()
+        self.config.read(credentials_path)
+
+
+        self.topic = topic
+        self.key = str(key).encode('utf-8')
+
 
     def emit(self, record):
         # drop kafka logging to avoid infinite recursion
-        if record.name == 'kafka':
+        if 'kafka' in record.name:
             return
-        self.producer.send('logs', str(record).encode('utf-8'), b'key')
-        self.producer.flush()
+        if 'botocore' in record.name:
+            return
+        msg = self.format(record)
+
+        print('creating producer')
+        producer = KafkaProducer(
+            bootstrap_servers=self.config['KAFKA']['addr'],
+            security_protocol="SASL_SSL",
+            sasl_mechanism="SCRAM-SHA-512",
+            sasl_plain_username=self.config['KAFKA']['login'],
+            sasl_plain_password=self.config['KAFKA']['password'],
+            ssl_cafile="YandexInternalRootCA.crt")
+        print('created producer')
+        producer.send('logs', b'test message', b'key')
+        print('sent 1')
+        producer.send(self.topic, str(msg).encode('utf-8'), self.key)
+        print('log sent')
+        producer.flush()
+        print('log flush')
+        producer.close()
 
     def close(self):
-        self.producer.close()
+
         logging.Handler.close(self)
 
 

@@ -7,12 +7,13 @@ import pickle
 import socket
 import sys
 import threading
+import random
 
 import boto3
 
 sys.path.insert(1, str(pathlib.Path(__file__).parent.parent.resolve()))
 from utils.api import API, Node
-from utils.logging_handlers import LocalHandler
+from utils.logging_handlers import LocalHandler, KafkaLoggingHandler
 from utils.horovod import HorovodTrain
 
 
@@ -139,7 +140,8 @@ def main(ip, port):
             ip = json.load(f)['external_ip_address_load_balancer']['value']
 
     logger = logging.getLogger("")
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(logging.INFO)
+    #logger.addHandler(KafkaLoggingHandler(key=f'NODE{random.randint(0, 10000)}'))
     logger.addHandler(LocalHandler('logs'))
 
     NodeAPI(ip=ip, port=port, logger=logger).run()

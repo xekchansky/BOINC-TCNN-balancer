@@ -41,5 +41,5 @@ class KylbergDataset(Dataset):
             print("ERROR INDEX_ERROR", idx)
             idx = 228
             image = np.array(io.imread(self.data[idx][0]))
-        sample = [np.double((image / 255.0 - 0.5)), self.target[idx]]
+        sample = [np.single((image / 255.0 - 0.5)), self.target[idx]]
         return sample

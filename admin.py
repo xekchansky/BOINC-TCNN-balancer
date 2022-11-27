@@ -102,7 +102,7 @@ def main(ip, port):
             ip = json.load(f)['external_ip_address_load_balancer']['value']
 
     logger = logging.getLogger("")
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(logging.INFO)
     logger.addHandler(LocalHandler('logs'))
 
     AdminNode(ip=ip, port=port, logger=logger).run()

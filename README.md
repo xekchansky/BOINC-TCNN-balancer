@@ -14,6 +14,10 @@ Deployment of Apache Kafka logger
    chmod 655 YandexInternalRootCA.crt
    ```
 3) Specify kafka addr, login, password in ```credentials.ini```
+4) Run local log consumer ( writes logs from kafka into /logs/ )
+   ```bash
+   python3 utils/log_consumer.py
+   ```
 
 ## Load Balancer deploy
 Deployment of load balancer in yandex-cloud

@@ -14,6 +14,7 @@ from tqdm import tqdm
 sys.path.insert(1, str(pathlib.Path(__file__).parent.parent.resolve()))
 from utils.Kylberg import KylbergDataset
 from utils.models import tcnn3
+from utils.state_logger import StateLogger
 
 
 class Group:
@@ -55,7 +56,7 @@ def split_to_groups(tensor, num_members):
 
 
 class Horovod:
-    def __init__(self, model, api, logger=None):
+    def __init__(self, model, api, logger=None, state_logger=None):
         self.model = model
         self.flatten_sizes = {}
         self.orig_sizes = {}
@@ -68,12 +69,13 @@ class Horovod:
 
         self.api = api
         self.logger = logger
+        self.state_logger = state_logger
 
     def synchronize(self, batch_size, elapsed_time, max_batch_size, members=None):
         if members is None:
             members = self.api.ready_nodes
         united_tensor = self.flatten_layers()
-        torch.mul(united_tensor, batch_size)
+        united_tensor = torch.mul(united_tensor, batch_size)
         num_members = len(members)
         self.groups = split_to_groups(united_tensor, num_members)
         for i in self.groups.keys():
@@ -84,27 +86,28 @@ class Horovod:
         start_index = num_members - 1 - self.api.id
         for i in range(2 * (num_members - 1)):
             group_index = (start_index + i) % num_members
-            # print('GROUP INDEX:', group_index)
-            # print('WAITING')
+
+            self.state_logger.wait()
             while min((i + 1), num_members) > self.groups[group_index].participants_number:
                 self.process_incoming_groups()
                 num_members = len(self.api.ready_nodes)
+
+            self.state_logger.sync()
             msg = (group_index,
                    self.groups[group_index].tensor.tolist(),
                    self.groups[group_index].total_batch_size,
                    self.groups[group_index].participants_number,
                    self.groups[group_index].total_elapsed_time)
             msg = pickle.dumps(msg)
-            # print('SENDING ', len(msg))
             self.api.send_message(msg_type='SUBMIT', msg=msg, target_node=self.api.load_balancer)
-            # print('SENT\n')
 
         #  wait for last groups
+        self.state_logger.wait()
         while not self.check_all_completed():
             self.process_incoming_groups()
+        self.state_logger.sync()
 
-        self.logger.info('check completion: %s', self.check_all_completed())
-        print('all completed:', self.check_all_completed())
+        self.logger.debug('check completion: %s', self.check_all_completed())
         for group in self.groups.values():
             group.normalize()
         flatten_layers = torch.cat([self.groups[i].tensor for i in self.groups.keys()], dim=-1)
@@ -113,7 +116,7 @@ class Horovod:
 
     def add_incoming_group(self, msg):
         group_index, tensor_list, total_batch_size, participants_number, total_elapsed_time = pickle.loads(msg)
-        group = Group(torch.tensor(tensor_list).double(), total_batch_size, participants_number, total_elapsed_time)
+        group = Group(torch.tensor(tensor_list).float(), total_batch_size, participants_number, total_elapsed_time)
         group.completed = self.check_group_completion(group)
         self.incoming_groups.append((group_index, group))
 
@@ -121,6 +124,7 @@ class Horovod:
         members = self.api.ready_nodes
         num_members = len(members)
         if group.participants_number == num_members:
+            group.completed = True
             return True
         else:
             return False
@@ -128,7 +132,8 @@ class Horovod:
     def check_all_completed(self):
         for group in self.groups.values():
             if not group.completed:
-                return False
+                if not self.check_group_completion(group):
+                    return False
         return True
 
     def process_incoming_groups(self):
@@ -174,11 +179,12 @@ class HorovodTrain:
     def __init__(self, api, logger=None, init_model_path='initial_model.pth'):
         self.api = api
         self.logger = logger
+        self.state_logger = StateLogger(logger=logger, send_period=60)
         self.model_logging_period = 60
 
         self.model = tcnn3()
-        self.model.double()
-        self.model.load_state_dict(torch.load(init_model_path))
+        self.model.float()
+        # self.model.load_state_dict(torch.load(init_model_path))
 
         self.model_size = 81.99 * 1024 * 1024  # 82Mb for 1 image in batch
         self.RAM_size = psutil.virtual_memory().total
@@ -189,11 +195,15 @@ class HorovodTrain:
         ###
 
         self.loss_fn = nn.CrossEntropyLoss()
-        self.optimizer = optim.SGD(self.model.parameters(), lr=0.001, momentum=0.9, weight_decay=0.0001)
+        self.optimizer = optim.SGD(self.model.parameters(), lr=0.01, momentum=0.9, weight_decay=0.0001)
         self.optimizer.zero_grad()
         self.dataset = KylbergDataset(data_path='data', train=True)
         self.train_ds_loader = torch.utils.data.DataLoader(self.dataset, batch_size=self.max_batch_size, shuffle=True)
-        self.horovod = Horovod(self.model, api=api, logger=self.logger)
+        self.horovod = Horovod(self.model, api=api, logger=self.logger, state_logger=self.state_logger)
+
+        checkpoint = torch.load(init_model_path)
+        self.model.load_state_dict(checkpoint['model_state_dict'])
+        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
     def get_max_batch_size(self):
         available_ram_size = psutil.virtual_memory().available
@@ -201,10 +211,11 @@ class HorovodTrain:
         return self.max_batch_size
 
     def fit(self):
-        print('fitting')
-        self.train_epoch()
+        while True:
+            self.train_epoch()
 
     def train_epoch(self):
+        self.state_logger.backward()
         train_loss = 0.0
         train_acc = 0.0
         self.model.train()
@@ -229,23 +240,24 @@ class HorovodTrain:
             loss = self.loss_fn(predict, lbl)
             loss.backward()
             elapsed_time = time() - start
-            print('syncing')
-            #batch_size = self.horovod.synchronize(batch_size=batch_size,
-            #                                      elapsed_time=elapsed_time,
-            #                                      max_batch_size=self.max_batch_size)
-            print(f'batch size: {batch_size}')
+
+            self.state_logger.sync()
+            batch_size = self.horovod.synchronize(batch_size=batch_size,
+                                                  elapsed_time=elapsed_time,
+                                                  max_batch_size=self.max_batch_size)
+            self.state_logger.backward()
             start = time()
             self.optimizer.step()
 
             train_loss += loss.item() * img.size(0)
 
             batch_predictions = predict.cpu().detach().numpy()
-            predicted_classes = np.array([np.argmax(batch_predictions[i]) for i in range(batch_size)])
+            predicted_classes = np.array([np.argmax(batch_predictions[i]) for i in range(img.size(0))])
             correct_predictions = np.sum(predicted_classes == lbl.cpu().numpy())
             train_acc += correct_predictions
 
             samples += 1
-            processed_images += batch_size
+            processed_images += img.size(0)
             sub_loss += loss.item() * img.size(0)
             sub_acc += correct_predictions
 
@@ -253,13 +265,12 @@ class HorovodTrain:
                 if (time() - last_log_time) > self.model_logging_period:
                     msg = f'MODEL STATE: loss: {sub_loss/samples} acc: {sub_acc/processed_images}'
                     self.logger.info(msg)
+                    print(msg)
                     samples = 0
                     processed_images = 0
                     sub_loss = 0.0
                     sub_acc = 0.0
-
-            print('loop_loss=', loss.item() * img.size(0))
-            print('acc=', train_acc / processed_images)
+                    last_log_time = time()
 
         train_loss /= len(self.train_ds_loader.sampler)
         train_acc /= len(self.dataset)
@@ -267,3 +278,5 @@ class HorovodTrain:
         print('EPOCH FINISHED')
         print(train_loss)
         print(train_acc)
+        msg = f'MODEL EPOCH STATE: loss: {train_loss} acc: {train_acc}'
+        self.logger.info(msg)

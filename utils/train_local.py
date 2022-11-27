@@ -67,7 +67,7 @@ class TextureCNN:
             summary(self.model, (1, 256, 256), dtypes=[torch.double])
 
         self.loss_fn = nn.CrossEntropyLoss()
-        self.optimizer = optim.SGD(self.model.parameters(), lr=0.001, momentum=0.9, weight_decay=0.0001)
+        self.optimizer = optim.SGD(self.model.parameters(), lr=0.01, momentum=0.9, weight_decay=0.0001)
 
         self.train_losses = []
         self.train_accuracies = []
@@ -105,13 +105,54 @@ class TextureCNN:
                 train_loss += loss.item() * img.size(0)
 
                 batch_predictions = predict.cpu().detach().numpy()
-                predicted_classes = np.array([np.argmax(batch_predictions[i]) for i in range(batch_size)])
+                predicted_classes = np.array([np.argmax(batch_predictions[i]) for i in range(img.size(0))])
                 train_acc += np.sum(predicted_classes == lbl.cpu().numpy())
 
                 loop += 1
                 print('loop_loss=', loss.item() * img.size(0))
                 print('norm_agg_loss=', train_loss / loop)
                 print('acc=', train_acc / (loop * batch_size))
+                s = 0.0
+                for layer in self.model.parameters():
+                    n = torch.norm(layer).item()
+                    s += n
+                    print(n)
+                print(s)
+
+            '''
+            5.644775797573973
+            0.5040984424978445
+            9.227386659635947
+            0.18828152386715832
+            11.31389145573382
+            0.24158908075986074
+            36.95775299378425
+            1.8864074418305739
+            36.95042184418618
+            0.5784639808660451
+            3.049070011716541
+            0.05413372730987334
+            106.59627295976206
+            '''
+
+            '''
+            _loss= 137.0180196494514     | 288/4301 [13:07<3:03:09,  2.74s/it]
+            norm_agg_loss= 161.29155358197244
+            acc= 0.04975778546712803
+            5.7605868058238565
+            0.36632496731563546
+            9.301043613240509
+            0.3290153648330167
+            11.361558578835695
+            0.3241133290595636
+            36.8621079344434
+            2.039151156056902
+            36.87564467152725
+            0.7706353910121758
+            3.489255667891104
+            0.4132399478213517
+            107.89267742786045
+            '''
 
             '''
             self.model.eval()

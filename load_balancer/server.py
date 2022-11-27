@@ -11,7 +11,7 @@ from data_distributor import DataDistributor
 
 sys.path.insert(1, str(pathlib.Path(__file__).parent.parent.resolve()))
 from utils.api import API
-from utils.logging_handlers import LocalHandler
+from utils.logging_handlers import LocalHandler, KafkaLoggingHandler
 
 
 def get_fingerprint(string):
@@ -103,7 +103,6 @@ class LoadBalancerAPI(API):
 
     def forward(self, msg, sender, *_, **__):
         target_node = self.get_next(sender)
-        print(f'{sender.addr} -> {target_node.addr}')
         lost_nodes = False
         while not self.send_message(msg_type='SUBMIT', msg=msg, target_node=target_node):
             lost_nodes = True
@@ -166,7 +165,8 @@ def parse_args():
 
 def main(ip, port, admin_password):
     logger = logging.getLogger("")
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(logging.INFO)
+    #logger.addHandler(KafkaLoggingHandler(key='SERVER'))
     logger.addHandler(LocalHandler('logs'))
 
     LoadBalancerAPI(ip=ip, port=port, admin_password=admin_password, logger=logger).run()
