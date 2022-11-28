@@ -39,6 +39,7 @@ class Group:
 
     def normalize(self):
         self.tensor = torch.div(self.tensor, self.total_batch_size)
+        self.total_elapsed_time /= self.participants_number
 
 
 def split_to_groups(tensor, num_members):
@@ -112,7 +113,16 @@ class Horovod:
             group.normalize()
         flatten_layers = torch.cat([self.groups[i].tensor for i in self.groups.keys()], dim=-1)
         self.restore_layers(flatten_layers)
-        return max_batch_size
+
+        avg_time = sum([self.groups[i].total_elapsed_time for i in self.groups.keys()]) / len(self.groups.keys())
+        print('avg_time', avg_time)
+        print('elapsed_time', elapsed_time)
+        batch_change_coefficient = avg_time / elapsed_time
+        print('batch_change_coefficient', batch_change_coefficient)
+        new_batch_size = int(batch_size * batch_change_coefficient) + 1
+        print('proposed_batch_size', new_batch_size)
+
+        return min(max_batch_size, new_batch_size)
 
     def add_incoming_group(self, msg):
         group_index, tensor_list, total_batch_size, participants_number, total_elapsed_time = pickle.loads(msg)
@@ -191,6 +201,7 @@ class HorovodTrain:
         self.using_RAM_size = self.RAM_size
         self.max_RAM_usage = 0.75
         self.max_batch_size = self.get_max_batch_size()
+        self.batch_size = self.max_batch_size
         self.logger.info(f'MAX BATCH SIZE {self.max_batch_size} MAX RAM USAGE {self.using_RAM_size}')
         ###
 
@@ -198,7 +209,7 @@ class HorovodTrain:
         self.optimizer = optim.SGD(self.model.parameters(), lr=0.01, momentum=0.9, weight_decay=0.0001)
         self.optimizer.zero_grad()
         self.dataset = KylbergDataset(data_path='data', train=True)
-        self.train_ds_loader = torch.utils.data.DataLoader(self.dataset, batch_size=self.max_batch_size, shuffle=True)
+        self.train_ds_loader = torch.utils.data.DataLoader(self.dataset, batch_size=1, shuffle=True)
         self.horovod = Horovod(self.model, api=api, logger=self.logger, state_logger=self.state_logger)
 
         checkpoint = torch.load(init_model_path)
@@ -221,7 +232,6 @@ class HorovodTrain:
         self.model.train()
 
         start = time()
-        batch_size = self.max_batch_size
 
         # variables for logging model state
         samples = 0
@@ -230,7 +240,28 @@ class HorovodTrain:
         sub_acc = 0.0
         last_log_time = time()
 
-        for img, lbl in tqdm(self.train_ds_loader):
+        iter_ds = iter(self.train_ds_loader)
+        left_images = len(iter_ds)
+        end = False
+
+        while not end:
+
+            imgs = []
+            lbls = []
+
+            for t in range(self.batch_size):
+                new_image, new_lbl = next(iter_ds)
+                imgs.append(new_image)
+                lbls.append(new_lbl)
+                left_images -= 1
+                if left_images == 0:
+                    end = True
+                    break
+
+            img = torch.cat(imgs, dim=0)
+            lbl = torch.cat(lbls, dim=0)
+
+            print('batch_size', img.size(0))
 
             img = torch.reshape(img, [-1, 1, 256, 256])
             self.optimizer.zero_grad()
@@ -242,9 +273,9 @@ class HorovodTrain:
             elapsed_time = time() - start
 
             self.state_logger.sync()
-            batch_size = self.horovod.synchronize(batch_size=batch_size,
-                                                  elapsed_time=elapsed_time,
-                                                  max_batch_size=self.max_batch_size)
+            self.batch_size = self.horovod.synchronize(batch_size=img.size(0),
+                                                       elapsed_time=elapsed_time,
+                                                       max_batch_size=self.max_batch_size)
             self.state_logger.backward()
             start = time()
             self.optimizer.step()
@@ -263,7 +294,7 @@ class HorovodTrain:
 
             if self.api.id == 0:
                 if (time() - last_log_time) > self.model_logging_period:
-                    msg = f'MODEL STATE: loss: {sub_loss/samples} acc: {sub_acc/processed_images}'
+                    msg = f'MODEL STATE: loss: {sub_loss / samples} acc: {sub_acc / processed_images}'
                     self.logger.info(msg)
                     print(msg)
                     samples = 0
