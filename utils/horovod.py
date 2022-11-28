@@ -179,8 +179,8 @@ class HorovodTrain:
     def __init__(self, api, logger=None, init_model_path='initial_model.pth'):
         self.api = api
         self.logger = logger
-        self.state_logger = StateLogger(logger=logger, send_period=60)
-        self.model_logging_period = 60
+        self.state_logger = StateLogger(logger=logger, send_period=30)
+        self.model_logging_period = 600
 
         self.model = tcnn3()
         self.model.float()
@@ -188,10 +188,10 @@ class HorovodTrain:
 
         self.model_size = 81.99 * 1024 * 1024  # 82Mb for 1 image in batch
         self.RAM_size = psutil.virtual_memory().total
+        self.using_RAM_size = self.RAM_size
         self.max_RAM_usage = 0.75
-        # self.max_batch_size = self.RAM_size * self.max_RAM_usage // self.model_size
-        # self.max_batch_size = self.get_max_batch_size()
-        self.max_batch_size = 50
+        self.max_batch_size = self.get_max_batch_size()
+        self.logger.info(f'MAX BATCH SIZE {self.max_batch_size} MAX RAM USAGE {self.using_RAM_size}')
         ###
 
         self.loss_fn = nn.CrossEntropyLoss()
@@ -206,8 +206,8 @@ class HorovodTrain:
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
     def get_max_batch_size(self):
-        available_ram_size = psutil.virtual_memory().available
-        self.max_batch_size = int(available_ram_size // self.model_size)
+        self.using_RAM_size = psutil.virtual_memory().available * self.max_RAM_usage
+        self.max_batch_size = int(self.using_RAM_size // self.model_size)
         return self.max_batch_size
 
     def fit(self):

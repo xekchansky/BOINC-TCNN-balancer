@@ -14,10 +14,16 @@ class KafkaLoggingHandler(logging.Handler):
         self.config = configparser.ConfigParser()
         self.config.read(credentials_path)
 
-
         self.topic = topic
         self.key = str(key).encode('utf-8')
 
+        self.producer = KafkaProducer(
+            bootstrap_servers=self.config['KAFKA']['addr'],
+            security_protocol="SASL_SSL",
+            sasl_mechanism="SCRAM-SHA-512",
+            sasl_plain_username=self.config['KAFKA']['login'],
+            sasl_plain_password=self.config['KAFKA']['password'],
+            ssl_cafile="YandexInternalRootCA.crt")
 
     def emit(self, record):
         # drop kafka logging to avoid infinite recursion
@@ -25,27 +31,11 @@ class KafkaLoggingHandler(logging.Handler):
             return
         if 'botocore' in record.name:
             return
-        msg = self.format(record)
 
-        print('creating producer')
-        producer = KafkaProducer(
-            bootstrap_servers=self.config['KAFKA']['addr'],
-            security_protocol="SASL_SSL",
-            sasl_mechanism="SCRAM-SHA-512",
-            sasl_plain_username=self.config['KAFKA']['login'],
-            sasl_plain_password=self.config['KAFKA']['password'],
-            ssl_cafile="YandexInternalRootCA.crt")
-        print('created producer')
-        producer.send('logs', b'test message', b'key')
-        print('sent 1')
-        producer.send(self.topic, str(msg).encode('utf-8'), self.key)
-        print('log sent')
-        producer.flush()
-        print('log flush')
-        producer.close()
+        msg = str(self.format(record)).encode('utf-8')
+        self.producer.send(self.topic, msg, self.key)
 
     def close(self):
-
         logging.Handler.close(self)
 
 

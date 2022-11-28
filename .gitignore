@@ -16,6 +16,10 @@
 /terraform.tfstate
 /terraform.tfstate.backup
 /.terraform.tfstate.lock.info
+/artificial_clients_deploy/.terraform/
+/artificial_clients_deploy/.terraform.lock.hcl
+/artificial_clients_deploy/terraform.tfstate
+/artificial_clients_deploy/terraform.tfstate.backup
 
 #ignore logs and accs info files
 /*.json

@@ -1,0 +1,7 @@
+spec:
+  containers:
+  - image: cr.yandex/crpqve2rbj2resnjl14t/client:latest
+    securityContext:
+      privileged: true
+    stdin: true
+    tty: true

@@ -3,6 +3,7 @@ WORKDIR home
 COPY /load_balancer load_balancer
 COPY /utils utils
 COPY /credentials.ini credentials.ini
+COPY /YandexInternalRootCA.crt YandexInternalRootCA.crt
 RUN set -xe \
     && apt-get update \
     && apt-get install python3-pip -y

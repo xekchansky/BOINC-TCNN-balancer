@@ -38,7 +38,7 @@ class LoadBalancerAPI(API):
 
         self.started = False
 
-        self.ds = DataDistributor(members_estimate=150)
+        self.ds = DataDistributor(members_estimate=7)
 
     def __del__(self):
         super().__del__()
@@ -166,8 +166,7 @@ def parse_args():
 def main(ip, port, admin_password):
     logger = logging.getLogger("")
     logger.setLevel(logging.INFO)
-    #logger.addHandler(KafkaLoggingHandler(key='SERVER'))
-    logger.addHandler(LocalHandler('logs'))
+    logger.addHandler(KafkaLoggingHandler(key='SERVER'))
 
     LoadBalancerAPI(ip=ip, port=port, admin_password=admin_password, logger=logger).run()
 

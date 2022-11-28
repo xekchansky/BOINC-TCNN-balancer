@@ -19,7 +19,6 @@ class StateLogger:
     def send_log(self):
         stat = json.dumps(self.statistics)
         self.logger.info(f'STATES TIME: {stat}')
-        print('send_log', stat)
 
     def log(self, key):
         self.statistics[self.current_state] += time() - self.last_state_start

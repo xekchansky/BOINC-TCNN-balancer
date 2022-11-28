@@ -4,7 +4,7 @@ Development of a load balancing system for volunteer distributed computing proje
 ## Data preprocessing
 Follow instructions in ```preprocessing/```
 
-### Kafka Log Broker deploy
+## Kafka Log Broker deploy
 Deployment of Apache Kafka logger
 1) Deploy Kafka as a service on Yandex Cloud
 2) Get certificates
@@ -46,7 +46,7 @@ Deployment of load balancer in yandex-cloud
    export YC_CLOUD_ID=$(yc config get cloud-id)
    export YC_FOLDER_ID=$(yc config get folder-id)
    ```
-7) Deploy load balancer using terraform: \
+7) Deploy load balancer using terraform:
     ```bash
    terraform validate
    terraform plan
@@ -80,3 +80,23 @@ docker-compose exec apache bash
 bin/boinc2docker_create_work.py python:alpine python -c "print('Hello BOINC')"
 bin/boinc2docker_create_work.py -it --network=host -v /mnt/share/ssh:/root/.ssh my_horovod bash app/run.sh
 ```
+
+## Artificial clients deploy
+1) Build client docker image and push it to registry:
+   ```bash
+   docker build . -f app/Dockerfile -t cr.yandex/<registry ID>/client
+   docker push cr.yandex/<registry ID>/client
+   ```
+   <!---
+   ID=crpqve2rbj2resnjl14t 
+   cmd:
+   docker build . -f app/Dockerfile -t cr.yandex/crpqve2rbj2resnjl14t/client
+   docker push cr.yandex/crpqve2rbj2resnjl14t/client
+   -->
+2) Go to ```/artificial_clients_deploy```
+3) Deploy clients using terraform:
+    ```bash
+   terraform validate
+   terraform plan
+   terraform apply
+   ```

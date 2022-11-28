@@ -1,19 +1,20 @@
 import argparse
+import configparser
 import json
 import logging
 import os
 import pathlib
 import pickle
+import random
 import socket
 import sys
 import threading
-import random
 
 import boto3
 
 sys.path.insert(1, str(pathlib.Path(__file__).parent.parent.resolve()))
 from utils.api import API, Node
-from utils.logging_handlers import LocalHandler, KafkaLoggingHandler
+from utils.logging_handlers import KafkaLoggingHandler
 from utils.horovod import HorovodTrain
 
 
@@ -34,7 +35,7 @@ class NodeAPI(API):
         self.msg_types.update(node_msg_types)
 
         self.data_path = 'data'
-        self.hvd_train = HorovodTrain(api=self, logger=self.logger)
+        self.hvd_train = None
 
     def __del__(self):
         super().__del__()
@@ -56,7 +57,14 @@ class NodeAPI(API):
         if not os.path.exists(self.data_path):
             os.mkdir(self.data_path)
 
-        s3 = boto3.client('s3', endpoint_url='https://storage.yandexcloud.net')
+        credentials_path = 'credentials.ini'
+        config = configparser.ConfigParser()
+        config.read(credentials_path)
+        s3 = boto3.client('s3',
+                          endpoint_url='https://storage.yandexcloud.net',
+                          aws_access_key_id=config['AWS']['access_key_id'],
+                          aws_secret_access_key=config['AWS']['secret_access_key'])
+        self.logger.info(f'DOWNLOADING {len(x_train)} OBJECTS')
         for file_name in x_train:
             file_path = os.path.join(self.data_path, file_name)
             if not os.path.exists(file_path):
@@ -73,7 +81,7 @@ class NodeAPI(API):
 
     def routine(self):
         """Learning routine after 'START' message"""
-        print('STARTED')
+        self.hvd_train = HorovodTrain(api=self, logger=self.logger)
         self.hvd_train.fit()
 
     def income_submit(self, msg, *_, **__):
@@ -141,8 +149,7 @@ def main(ip, port):
 
     logger = logging.getLogger("")
     logger.setLevel(logging.INFO)
-    #logger.addHandler(KafkaLoggingHandler(key=f'NODE{random.randint(0, 10000)}'))
-    logger.addHandler(LocalHandler('logs'))
+    logger.addHandler(KafkaLoggingHandler(key=f'NODE{random.randint(0, 10000)}'))
 
     NodeAPI(ip=ip, port=port, logger=logger).run()
 

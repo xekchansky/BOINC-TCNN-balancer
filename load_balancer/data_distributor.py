@@ -26,7 +26,7 @@ def read_dataset_table(dataset_path='dataset.txt'):
 
 
 class DataDistributor:
-    def __init__(self, members_estimate=5, replication_factor=3, seed=42, dataset_path='dataset.txt'):
+    def __init__(self, members_estimate=7, replication_factor=2, seed=42, dataset_path='dataset.txt'):
         if replication_factor > members_estimate:
             print('Data partition size > dataset size, setting partition size to dataset size')
             replication_factor = members_estimate
